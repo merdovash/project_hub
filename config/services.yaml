@@ -1,0 +1,40 @@
+domain: example.com
+cookieDomain: .example.com
+portalPort: 5180
+
+services:
+  - id: budget
+    name: Trip Budget
+    description: Семейный бюджет и поездки
+    subdomain: budget
+    repo: https://github.com/merdovash/trip_budget.git
+    branch: master
+    path: /var/www/services/budget
+    port: 5173
+    pm2Name: finance
+    build: npm ci && npm run build
+    start: npm run preview -- --host 127.0.0.1 --port 5173
+    enabled: true
+    env:
+      DATABASE_URL: ${DATABASE_URL}
+      COOKIE_DOMAIN: .example.com
+      PORTAL_URL: https://example.com
+      VITE_PORTAL_URL: https://example.com
+
+  - id: wallet
+    name: Wallet
+    description: Счета и снимки баланса
+    subdomain: wallet
+    repo: https://github.com/merdovash/wallet.git
+    branch: master
+    path: /var/www/services/wallet
+    port: 5174
+    pm2Name: wallet
+    build: npm ci && npm run build
+    start: npm run preview -- --host 127.0.0.1 --port 5174
+    enabled: true
+    env:
+      DATABASE_URL: ${DATABASE_URL}
+      COOKIE_DOMAIN: .example.com
+      PORTAL_URL: https://example.com
+      VITE_PORTAL_URL: https://example.com

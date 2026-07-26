@@ -1,0 +1,20 @@
+# Generated template — prefer `npm run sync:caddy` which writes deploy/Caddyfile.generated
+#
+# Install:
+#   sudo cp deploy/Caddyfile.generated /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Or point Caddy at the generated file:
+#   caddy run --config /var/www/portal/deploy/Caddyfile.generated
+
+example.com {
+	reverse_proxy 127.0.0.1:5180
+}
+
+budget.example.com {
+	reverse_proxy 127.0.0.1:5173
+}
+
+wallet.example.com {
+	reverse_proxy 127.0.0.1:5174
+}
