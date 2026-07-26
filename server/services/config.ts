@@ -3,10 +3,6 @@ import path from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { loadEnvFile } from '../db/pool'
 
-export interface ServiceEnv {
-  [key: string]: string
-}
-
 export interface ServiceConfig {
   id: string
   name: string
@@ -20,7 +16,6 @@ export interface ServiceConfig {
   build: string
   start: string
   enabled: boolean
-  env?: ServiceEnv
 }
 
 export interface PortalServicesConfig {
@@ -36,10 +31,6 @@ export interface PublicService {
   description: string
   subdomain: string
   url: string
-}
-
-function expandEnv(value: string): string {
-  return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_, key: string) => process.env[key] ?? '')
 }
 
 function resolveConfigPath(): string {
@@ -60,29 +51,20 @@ export function loadServicesConfig(): PortalServicesConfig {
     throw new Error('Invalid services.yaml: domain and services[] required')
   }
 
-  const services: ServiceConfig[] = parsed.services.map((svc) => {
-    const env: ServiceEnv = {}
-    if (svc.env) {
-      for (const [k, v] of Object.entries(svc.env)) {
-        env[k] = expandEnv(String(v))
-      }
-    }
-    return {
-      id: String(svc.id),
-      name: String(svc.name),
-      description: String(svc.description ?? ''),
-      subdomain: String(svc.subdomain),
-      repo: String(svc.repo),
-      branch: String(svc.branch ?? 'master'),
-      path: String(svc.path),
-      port: Number(svc.port),
-      pm2Name: String(svc.pm2Name ?? svc.id),
-      build: String(svc.build ?? 'npm ci && npm run build'),
-      start: String(svc.start),
-      enabled: svc.enabled !== false,
-      env,
-    }
-  })
+  const services: ServiceConfig[] = parsed.services.map((svc) => ({
+    id: String(svc.id),
+    name: String(svc.name),
+    description: String(svc.description ?? ''),
+    subdomain: String(svc.subdomain),
+    repo: String(svc.repo),
+    branch: String(svc.branch ?? 'master'),
+    path: String(svc.path),
+    port: Number(svc.port),
+    pm2Name: String(svc.pm2Name ?? svc.id),
+    build: String(svc.build ?? 'npm ci && npm run build'),
+    start: String(svc.start),
+    enabled: svc.enabled !== false,
+  }))
 
   return {
     domain: String(parsed.domain),

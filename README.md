@@ -17,7 +17,9 @@ npm run dev            # http://localhost:5180
 [`config/services.yaml`](config/services.yaml) — источник правды для UI каталога и sync:
 
 - `domain` / `cookieDomain`
-- список сервисов: `id`, `name`, `subdomain`, `repo`, `branch`, `path`, `port`, `pm2Name`, `build`, `start`, `enabled`, `env`
+- список сервисов: `id`, `name`, `subdomain`, `repo`, `branch`, `path`, `port`, `pm2Name`, `build`, `start`, `enabled`
+
+Env задаётся один раз в корневом [`.env`](.env.example). При `npm run sync` он копируется в `.env` каждого дочернего сервиса (`DATABASE_URL`, `COOKIE_DOMAIN`, `PORTAL_URL`, `VITE_PORTAL_URL`, …). Hub-only ключи (`PG_ADMIN_*`, `SERVICES_CONFIG`, `CADDY_*`) не копируются. Если `PORTAL_URL` / `COOKIE_DOMAIN` не заданы — берутся из `domain` / `cookieDomain` в yaml.
 
 Публичный API: `GET /api/services`.
 
