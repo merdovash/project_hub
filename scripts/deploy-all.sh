@@ -38,6 +38,23 @@ if ! command -v pm2 >/dev/null; then
   npm install -g pm2
 fi
 
+ALLOWED_HOSTS="true"
+if [[ -f .env ]]; then
+  DOMAIN_VAL="$(grep -E '^DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  COOKIE_VAL="$(grep -E '^COOKIE_DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  if [[ -n "${COOKIE_VAL:-}" ]]; then
+    ALLOWED_HOSTS="$COOKIE_VAL"
+  elif [[ -n "${DOMAIN_VAL:-}" ]]; then
+    ALLOWED_HOSTS=".${DOMAIN_VAL#.}"
+  fi
+fi
+
+start_portal() {
+  echo "==> Restarting hub in PM2 ($APP_NAME :$PORT, allowedHosts=$ALLOWED_HOSTS)"
+  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+  pm2 start npm --name "$APP_NAME" --cwd "$ROOT" -- run preview -- --host 127.0.0.1 --port "$PORT" --allowed-hosts "$ALLOWED_HOSTS"
+}
+
 if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Updating hub ($BRANCH)"
   git fetch origin "$BRANCH"
@@ -50,26 +67,19 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Building hub"
   npm run build
 
-  ALLOWED_HOSTS="true"
-  if [[ -f .env ]]; then
-    DOMAIN_VAL="$(grep -E '^DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
-    COOKIE_VAL="$(grep -E '^COOKIE_DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
-    if [[ -n "${COOKIE_VAL:-}" ]]; then
-      ALLOWED_HOSTS="$COOKIE_VAL"
-    elif [[ -n "${DOMAIN_VAL:-}" ]]; then
-      ALLOWED_HOSTS=".${DOMAIN_VAL#.}"
-    fi
-  fi
-
-  echo "==> Restarting hub in PM2 ($APP_NAME :$PORT, allowedHosts=$ALLOWED_HOSTS)"
-  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-  pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT" --allowed-hosts "$ALLOWED_HOSTS"
+  start_portal
 else
   echo "==> Skipping hub (SKIP_PORTAL=1)"
 fi
 
 echo "==> Syncing all enabled services (git/build/PM2) + Caddyfile"
 node ./scripts/sync-services.mjs
+
+# Child builds can OOM-kill the hub preview; ensure portal is up at the end.
+if [[ "$SKIP_PORTAL" != "1" ]]; then
+  echo "==> Ensuring hub is online after sync"
+  start_portal
+fi
 
 pm2 save
 
