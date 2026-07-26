@@ -16,8 +16,6 @@ function apiMiddleware() {
     const pathname = url.pathname
     const method = req.method ?? 'GET'
 
-    loadEnvFile()
-
     const run = async () => {
       if (pathname.startsWith('/api/auth')) {
         return handleAuthApi(req, res, pathname)
@@ -50,9 +48,11 @@ export function apiPlugin(): Plugin {
   return {
     name: 'portal-api',
     configureServer(server) {
+      loadEnvFile()
       server.middlewares.use(apiMiddleware())
     },
     configurePreviewServer(server) {
+      loadEnvFile()
       server.middlewares.use(apiMiddleware())
     },
   }

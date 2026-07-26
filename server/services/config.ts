@@ -33,6 +33,14 @@ export interface PublicService {
   url: string
 }
 
+interface ServicesConfigCache {
+  configPath: string
+  mtimeMs: number
+  value: PortalServicesConfig
+}
+
+let servicesConfigCache: ServicesConfigCache | null = null
+
 function resolveConfigPath(): string {
   const fromEnv = process.env.SERVICES_CONFIG?.trim()
   if (fromEnv) return path.resolve(fromEnv)
@@ -90,6 +98,14 @@ export function loadServicesConfig(): PortalServicesConfig {
   if (!fs.existsSync(configPath)) {
     throw new Error(`Services config not found: ${configPath}`)
   }
+  const mtimeMs = fs.statSync(configPath).mtimeMs
+  if (
+    servicesConfigCache?.configPath === configPath &&
+    servicesConfigCache.mtimeMs === mtimeMs
+  ) {
+    return servicesConfigCache.value
+  }
+
   const raw = fs.readFileSync(configPath, 'utf8')
   const parsed = parseYaml(raw) as Partial<PortalServicesConfig>
   if (!Array.isArray(parsed.services)) {
@@ -114,12 +130,18 @@ export function loadServicesConfig(): PortalServicesConfig {
     enabled: svc.enabled !== false,
   }))
 
-  return {
+  const value = {
     domain,
     cookieDomain,
     portalPort: Number(parsed.portalPort ?? 5180),
     services,
   }
+  servicesConfigCache = { configPath, mtimeMs, value }
+  return value
+}
+
+export function resetServicesConfigCache(): void {
+  servicesConfigCache = null
 }
 
 export function listPublicServices(cfg: PortalServicesConfig = loadServicesConfig()): PublicService[] {

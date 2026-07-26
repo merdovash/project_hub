@@ -22,11 +22,18 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss(), apiPlugin()],
     server: {
       host: true,
-      port: 5180,
+      watch: {
+        ignored: [
+          '**/dist/**',
+          '**/logs/**',
+          '**/deploy/**',
+          '**/.git/**',
+          '**/config/services.yaml',
+        ],
+      },
     },
     preview: {
       host: true,
-      port: 5180,
       allowedHosts: previewAllowedHosts(env),
     },
     test: {

@@ -2,7 +2,11 @@ declare module 'node:fs' {
   export function readFileSync(path: string, encoding: 'utf-8' | 'utf8'): string
   export function writeFileSync(path: string, data: string, encoding?: 'utf-8' | 'utf8'): void
   export function existsSync(path: string): boolean
+  export function statSync(path: string): { mtimeMs: number }
+  export function mkdtempSync(prefix: string): string
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void
+  export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void
+  export function utimesSync(path: string, atime: Date, mtime: Date): void
   export function copyFileSync(src: string, dest: string): void
   export function unlinkSync(path: string): void
   export function appendFileSync(path: string, data: string, encoding?: 'utf-8' | 'utf8'): void

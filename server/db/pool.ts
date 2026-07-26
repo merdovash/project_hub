@@ -3,9 +3,12 @@ import path from 'node:path'
 import { Pool } from './pgClient'
 
 let pool: Pool | null = null
+let loadedEnvPath: string | null = null
 
 export function loadEnvFile(): void {
   const envPath = path.resolve(process.cwd(), '.env')
+  if (loadedEnvPath === envPath) return
+  loadedEnvPath = envPath
   if (!fs.existsSync(envPath)) return
   const text = fs.readFileSync(envPath, 'utf8')
   for (const line of text.split(/\r?\n/)) {
@@ -23,6 +26,10 @@ export function loadEnvFile(): void {
     }
     if (process.env[key] === undefined) process.env[key] = value
   }
+}
+
+export function resetEnvFileCache(): void {
+  loadedEnvPath = null
 }
 
 export function getPool(): Pool {
