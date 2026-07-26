@@ -16,7 +16,8 @@ npm run dev            # http://localhost:5180
 
 [`config/services.yaml`](config/services.yaml) — источник правды для UI каталога и sync:
 
-- список сервисов: `id`, `name`, `subdomain`, `repo`, `branch`, `path`, `port`, `pm2Name`, `build`, `start`, `enabled`
+- список сервисов: `id`, `name`, `subdomain`, `repo`, `branch`, `path`, `port`, `pm2Name`, `install`, `migrate`, `build`, `start`, `enabled`
+- sync: `install` → `migrate` (`npm run db:migrate`, или `migrate: false`) → `build` → PM2
 - `domain` / `cookieDomain` в yaml — только fallback; в проде задавай в `.env`
 
 Env задаётся один раз в корневом [`.env`](.env.example):
@@ -36,10 +37,13 @@ Env задаётся один раз в корневом [`.env`](.env.example):
 ## Sync / Caddy
 
 ```bash
-npm run sync:caddy     # только deploy/Caddyfile.generated + DNS.md
-npm run sync           # git pull/build/PM2 для всех enabled + Caddyfile
+npm run sync:caddy     # Caddyfile + установка в /etc/caddy при возможности
+npm run sync           # git → при изменениях: ci → migrate → build → PM2
 npm run sync -- --only wallet
+npm run sync -- --force              # пересобрать/перезапустить даже без git-обновлений
 ```
+
+Если у сервиса `origin/HEAD` не изменился и процесс уже отвечает — rebuild/restart пропускаются.
 
 DNS: см. [`deploy/DNS.md`](deploy/DNS.md) — нужен wildcard `*.example.com`.
 
@@ -57,7 +61,7 @@ chmod +x scripts/deploy-all.sh
 
 Только дочерние сервисы (хаб не трогать): `SKIP_PORTAL=1 ./scripts/deploy-all.sh`.
 
-Скрипт: git pull/build хаба → PM2 → sync всех enabled из `services.yaml` → `pm2 save` → systemd autostart PM2.
+Скрипт: git pull → `npm ci` → `db:migrate` → build хаба → PM2 → sync сервисов (migrate+build+PM2) → проверка порта → `pm2 save`.
 
 Только хаб: `scripts/deploy.sh`. CI: `.github/workflows/deploy.yml`.
 Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH`, optional `DEPLOY_PORT`.

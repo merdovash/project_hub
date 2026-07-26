@@ -68,6 +68,9 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Installing hub dependencies"
   npm ci
 
+  echo "==> Migrating hub DB"
+  npm run db:migrate
+
   echo "==> Building hub"
   npm run build
 
@@ -76,7 +79,7 @@ else
   echo "==> Skipping hub (SKIP_PORTAL=1)"
 fi
 
-echo "==> Syncing all enabled services (git/build/PM2) + Caddyfile"
+echo "==> Syncing all enabled services (install/migrate/build/PM2) + Caddyfile"
 node ./scripts/sync-services.mjs
 
 # Child builds can OOM-kill the hub preview; ensure portal is up at the end.
@@ -84,6 +87,19 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Ensuring hub is online after sync"
   start_portal
 fi
+
+echo "==> Waiting for hub :$PORT"
+for i in $(seq 1 45); do
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 1 "http://127.0.0.1:${PORT}/" || true)"
+  if [[ "$code" =~ ^[0-9]+$ && "$code" != "000" ]]; then
+    echo "Hub ready (HTTP $code)"
+    break
+  fi
+  if [[ "$i" -eq 45 ]]; then
+    echo "WARNING: hub did not respond on :$PORT — check: pm2 logs $APP_NAME"
+  fi
+  sleep 1
+done
 
 pm2 save
 

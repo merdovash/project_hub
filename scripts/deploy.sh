@@ -23,6 +23,9 @@ git reset --hard "origin/$BRANCH"
 echo "==> Installing dependencies"
 npm ci
 
+echo "==> Migrating hub DB"
+npm run db:migrate
+
 echo "==> Building"
 npm run build
 

@@ -1,15 +1,21 @@
 #!/usr/bin/env node
 /**
  * Sync subservices from config/services.yaml:
- *   - generate Caddyfile
- *   - git clone/pull + build + PM2 restart (unless --caddy-only)
+ *   - generate + install Caddyfile
+ *   - git clone/pull → npm ci → db:migrate → build → PM2 (unless --caddy-only)
  *   - copy shared env from portal .env into each service
+ *
+ * Per-service yaml keys: install, migrate, build (migrate: false to skip).
  *
  * Usage:
  *   node scripts/sync-services.mjs
  *   node scripts/sync-services.mjs --caddy-only
  *   node scripts/sync-services.mjs --only wallet
+ *   node scripts/sync-services.mjs --force          # rebuild/restart even if git unchanged
  *   SERVICES_CONFIG=/etc/portal/services.yaml node scripts/sync-services.mjs
+ *
+ * Without --force: if origin HEAD не изменился и процесс уже отвечает — skip
+ * install/migrate/build/PM2. При смене только .env или упавшем процессе — restart без rebuild.
  */
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -229,15 +235,30 @@ function buildEnv(sharedEnv) {
   return { ...rest, NODE_ENV: '' }
 }
 
+function gitRev(cwd) {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+  return result.status === 0 ? String(result.stdout || '').trim() : ''
+}
+
 function ensureRepo(svc) {
-  if (!fs.existsSync(svc.path)) {
+  const branch = svc.branch || 'master'
+  const gitDir = path.join(svc.path, '.git')
+  if (!fs.existsSync(svc.path) || !fs.existsSync(gitDir)) {
     fs.mkdirSync(path.dirname(svc.path), { recursive: true })
-    run('git', ['clone', '--branch', svc.branch || 'master', svc.repo, svc.path])
-    return
+    run('git', ['clone', '--branch', branch, svc.repo, svc.path])
+    return { cloned: true, changed: true, sha: gitRev(svc.path) }
   }
-  run('git', ['fetch', 'origin', svc.branch || 'master'], { cwd: svc.path })
-  run('git', ['checkout', svc.branch || 'master'], { cwd: svc.path })
-  run('git', ['reset', '--hard', `origin/${svc.branch || 'master'}`], { cwd: svc.path })
+
+  const before = gitRev(svc.path)
+  run('git', ['fetch', 'origin', branch], { cwd: svc.path })
+  run('git', ['checkout', branch], { cwd: svc.path })
+  run('git', ['reset', '--hard', `origin/${branch}`], { cwd: svc.path })
+  const after = gitRev(svc.path)
+  return { cloned: false, changed: !before || before !== after, sha: after }
 }
 
 function writeServiceEnv(svc, sharedEnv) {
@@ -245,7 +266,69 @@ function writeServiceEnv(svc, sharedEnv) {
   for (const [k, v] of Object.entries(sharedEnv)) {
     lines.push(`${k}=${v}`)
   }
-  fs.writeFileSync(path.join(svc.path, '.env'), `${lines.join('\n')}\n`, 'utf8')
+  const content = `${lines.join('\n')}\n`
+  const envPath = path.join(svc.path, '.env')
+  const prev = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : null
+  fs.writeFileSync(envPath, content)
+  return prev !== content
+}
+
+function pm2IsOnline(name) {
+  const result = spawnSync('pm2', ['jlist'], {
+    encoding: 'utf8',
+    shell: true,
+  })
+  if (result.status !== 0) return false
+  try {
+    const list = JSON.parse(String(result.stdout || '[]'))
+    return list.some((p) => p.name === name && p.pm2_env?.status === 'online')
+  } catch {
+    return false
+  }
+}
+
+function localPortResponds(port) {
+  const result = spawnSync(
+    'curl',
+    ['-sS', '-o', '/dev/null', '-w', '%{http_code}', '--connect-timeout', '1', `http://127.0.0.1:${port}/`],
+    { encoding: 'utf8', shell: process.platform === 'win32' },
+  )
+  const code = String(result.stdout || '').trim()
+  return /^\d+$/.test(code) && code !== '000'
+}
+
+function sleepMs(ms) {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  } catch {
+    const end = Date.now() + ms
+    while (Date.now() < end) {
+      /* fallback busy wait */
+    }
+  }
+}
+
+function packageHasScript(cwd, scriptName) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'))
+    return Boolean(pkg.scripts?.[scriptName])
+  } catch {
+    return false
+  }
+}
+
+/** Strip legacy `npm ci &&` prefix from build when install runs separately. */
+function resolveBuildCommand(svc) {
+  let build = (svc.build && String(svc.build).trim()) || 'npm run build'
+  build = build.replace(/^npm\s+ci\s*&&\s*/i, '').trim()
+  return build || 'npm run build'
+}
+
+function resolveMigrateCommand(svc) {
+  if (svc.migrate === false || svc.migrate === null) return null
+  if (typeof svc.migrate === 'string' && svc.migrate.trim()) return svc.migrate.trim()
+  if (packageHasScript(svc.path, 'db:migrate')) return 'npm run db:migrate'
+  return null
 }
 
 /** Vite has no CLI `--allowed-hosts` for preview; use env (picked up via server.allowedHosts). */
@@ -254,6 +337,23 @@ function allowedHostsEnv(domain) {
     .trim()
     .replace(/^\./, '')
   return host ? `.${host}` : ''
+}
+
+function waitForLocalPort(port, label, attempts = 45) {
+  for (let i = 0; i < attempts; i++) {
+    const result = spawnSync(
+      'curl',
+      ['-sS', '-o', '/dev/null', '-w', '%{http_code}', '--connect-timeout', '1', `http://127.0.0.1:${port}/`],
+      { encoding: 'utf8', shell: process.platform === 'win32' },
+    )
+    const code = String(result.stdout || '').trim()
+    if (/^\d+$/.test(code) && code !== '000') {
+      console.log(`==> ${label} ready on :${port} (HTTP ${code})`)
+      return
+    }
+    sleepMs(1000)
+  }
+  throw new Error(`${label} did not become ready on 127.0.0.1:${port}`)
 }
 
 function restartPm2(svc, domain) {
@@ -271,6 +371,8 @@ function restartPm2(svc, domain) {
       'npm',
       '--name',
       name,
+      '--cwd',
+      svc.path,
       '--',
       'run',
       'preview',
@@ -283,13 +385,54 @@ function restartPm2(svc, domain) {
     { cwd: svc.path, env },
   )
   run('pm2', ['save'], {})
+  waitForLocalPort(svc.port, name)
 }
 
-function syncService(svc, sharedEnv, domain) {
+function syncService(svc, sharedEnv, domain, { force = false } = {}) {
+  const name = svc.pm2Name || svc.id
   console.log(`\n==> Sync ${svc.id} (${svc.subdomain})`)
-  ensureRepo(svc)
-  writeServiceEnv(svc, sharedEnv)
-  runShell(svc.build || 'npm ci && npm run build', svc.path, buildEnv(sharedEnv))
+  const repo = ensureRepo(svc)
+  const envChanged = writeServiceEnv(svc, sharedEnv)
+  const shaShort = repo.sha ? repo.sha.slice(0, 7) : '?'
+  console.log(
+    `==> Git ${svc.id}: ${repo.cloned ? 'cloned' : repo.changed ? 'updated' : 'unchanged'} (${shaShort})`,
+  )
+
+  if (!sharedEnv.DATABASE_URL?.trim()) {
+    throw new Error(`DATABASE_URL missing — required for ${svc.id} migrate/runtime`)
+  }
+
+  const healthy = pm2IsOnline(name) && localPortResponds(svc.port)
+  const needsFull = force || repo.cloned || repo.changed
+  const needsRestart = needsFull || envChanged || !healthy
+
+  if (!needsFull && !needsRestart) {
+    console.log(`==> ${svc.id}: no git/env changes and ${name} is healthy — skip rebuild/restart`)
+    return
+  }
+
+  if (!needsFull && needsRestart) {
+    const reason = envChanged ? 'env changed' : `${name} not healthy`
+    console.log(`==> ${svc.id}: ${reason} — restart only (no rebuild)`)
+    restartPm2(svc, domain)
+    return
+  }
+
+  const env = buildEnv(sharedEnv)
+  const install = (svc.install && String(svc.install).trim()) || 'npm ci'
+  console.log(`==> Install ${svc.id}`)
+  runShell(install, svc.path, env)
+
+  const migrate = resolveMigrateCommand(svc)
+  if (migrate) {
+    console.log(`==> Migrate ${svc.id}`)
+    runShell(migrate, svc.path, env)
+  } else {
+    console.log(`==> Migrate ${svc.id}: skipped (no db:migrate / migrate: false)`)
+  }
+
+  console.log(`==> Build ${svc.id}`)
+  runShell(resolveBuildCommand(svc), svc.path, env)
   restartPm2(svc, domain)
 }
 
@@ -299,7 +442,6 @@ function maybeReloadCaddy(caddyPath) {
     runShell(reloadCmd, ROOT, {})
     return
   }
-  // Best-effort: caddy reload if binary exists and Caddyfile path is set
   const caddyfile = process.env.CADDYFILE || caddyPath
   const probe = spawnSync('caddy', ['version'], { stdio: 'ignore', shell: true })
   if (probe.status === 0 && fs.existsSync(caddyfile)) {
@@ -309,9 +451,27 @@ function maybeReloadCaddy(caddyPath) {
   }
 }
 
+/** Prefer system unit config; fall back to reload with generated path. */
+function installCaddyfile(caddyPath) {
+  const dest = process.env.CADDYFILE_DEST || '/etc/caddy/Caddyfile'
+  if (fs.existsSync(path.dirname(dest))) {
+    try {
+      fs.copyFileSync(caddyPath, dest)
+      console.log(`Installed Caddyfile → ${dest}`)
+      const reload = spawnSync('systemctl', ['reload', 'caddy'], { stdio: 'inherit' })
+      if (reload.status === 0) return
+      console.warn('systemctl reload caddy failed; trying caddy reload')
+    } catch (err) {
+      console.warn(`Could not install Caddyfile to ${dest}: ${err.message}`)
+    }
+  }
+  maybeReloadCaddy(caddyPath)
+}
+
 function main() {
   const args = process.argv.slice(2)
   const caddyOnly = args.includes('--caddy-only')
+  const force = args.includes('--force')
   const onlyIdx = args.indexOf('--only')
   const onlyId = onlyIdx >= 0 ? args[onlyIdx + 1] : null
 
@@ -344,7 +504,7 @@ function main() {
     'utf8',
   )
 
-  maybeReloadCaddy(caddyPath)
+  installCaddyfile(caddyPath)
 
   if (caddyOnly) {
     console.log('Caddy-only sync done')
@@ -356,9 +516,9 @@ function main() {
     throw new Error(`Service not found or disabled: ${onlyId}`)
   }
   for (const svc of targets) {
-    syncService(svc, sharedEnv, cfg.domain)
+    syncService(svc, sharedEnv, cfg.domain, { force })
   }
-  console.log('\nSync complete')
+  console.log(force ? '\nSync complete (--force)' : '\nSync complete')
 }
 
 main()

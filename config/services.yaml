@@ -12,7 +12,9 @@ services:
     path: /var/www/services/budget
     port: 5173
     pm2Name: finance
-    build: npm ci && npm run build
+    install: npm ci
+    migrate: npm run db:migrate
+    build: npm run build
     start: npm run preview -- --host 127.0.0.1 --port 5173
     enabled: true
 
@@ -25,6 +27,8 @@ services:
     path: /var/www/services/wallet
     port: 5174
     pm2Name: wallet
-    build: npm ci && npm run build
+    install: npm ci
+    migrate: npm run db:migrate
+    build: npm run build
     start: npm run preview -- --host 127.0.0.1 --port 5174
     enabled: true

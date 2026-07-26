@@ -8,7 +8,7 @@
 
 ## Рекомендуемый способ (полный деплой)
 
-Подтягивает хаб, собирает, перезапускает PM2, синхронизирует enabled-сервисы и Caddyfile:
+Подтягивает хаб, гоняет миграции БД, собирает, перезапускает PM2, синхронизирует enabled-сервисы (включая `db:migrate`) и Caddyfile:
 
 ```bash
 cd ~/hub/project_hub
@@ -41,11 +41,12 @@ SKIP_PORTAL=1 ./scripts/deploy-all.sh
 cd ~/hub/project_hub
 git pull origin master
 npm ci
+npm run db:migrate
 npm run build
 ./scripts/deploy.sh
 ```
 
-`deploy.sh` перезапустит PM2 с `--allowed-hosts` из `.env` (`COOKIE_DOMAIN` / `DOMAIN`) и обновит Caddyfile.
+`deploy.sh` сам вызовет `db:migrate`, перезапустит PM2 и обновит Caddyfile.
 
 ## Если менялись подсервисы (budget / wallet)
 
@@ -62,7 +63,18 @@ npm run sync
 npm run sync -- --only wallet
 ```
 
-Sync сделает `git pull` в `path` сервиса, `build`, перезапуск PM2 и обновит Caddyfile.
+Sync: `git fetch` → если есть новые коммиты: `npm ci` → **`db:migrate`** → `build` → PM2.
+Без обновлений в git и при живом процессе — сервис не трогается.
+Принудительно: `npm run sync -- --force` (или `--only wallet --force`).
+
+Если таблиц ещё нет (ошибка `relation "wallet_settings" does not exist`), достаточно:
+
+```bash
+cd /var/www/services/wallet
+npm run db:migrate
+```
+
+или полный sync из хаба (см. выше).
 
 ## Только Caddy (DNS / домен / список сервисов)
 
