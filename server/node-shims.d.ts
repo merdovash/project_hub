@@ -115,11 +115,17 @@ declare function structuredClone<T>(value: T): T
 
 declare class URL {
   constructor(input: string, base?: string)
+  protocol: string
   hostname: string
+  host: string
   port: string
   username: string
   password: string
   pathname: string
+  search: string
+  hash: string
+  href: string
+  origin: string
   searchParams: URLSearchParams
 }
 

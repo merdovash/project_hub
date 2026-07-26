@@ -45,6 +45,8 @@ DNS: см. [`deploy/DNS.md`](deploy/DNS.md) — нужен wildcard `*.example.c
 
 ## Деплой (Ubuntu / VPS)
 
+После `git pull` на сервере: [`deploy/RESTART.md`](deploy/RESTART.md).
+
 Полный прогон хаба + всех сервисов в PM2:
 
 ```bash
