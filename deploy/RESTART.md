@@ -85,30 +85,35 @@ sudo systemctl reload caddy
 
 ## Ручной перезапуск PM2 (если скрипт недоступен)
 
-Подставьте свой домен в `--allowed-hosts` (с точкой в начале — корень и все поддомены).
+Vite preview **не** принимает CLI `--allowed-hosts` (из‑за него процесс падает с `Unknown option`).
+Хост разрешается через `preview.allowedHosts` в `vite.config` и/или env
+`__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.ваш-домен.ru`.
 
 ### Portal
 
 ```bash
 cd ~/hub/project_hub
+export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.schekochikhin-tools.ru
 pm2 delete portal
-pm2 start npm --name portal -- run preview -- --host 127.0.0.1 --port 5180 --allowed-hosts .schekochikhin-tools.ru
+pm2 start npm --name portal --cwd /root/hub/project_hub -- run preview -- --host 127.0.0.1 --port 5180
 pm2 save
 ```
 
 ### Budget (finance)
 
 ```bash
+export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.schekochikhin-tools.ru
 pm2 delete finance
-pm2 start npm --name finance --cwd /var/www/services/budget -- run preview -- --host 127.0.0.1 --port 5173 --allowed-hosts .schekochikhin-tools.ru
+pm2 start npm --name finance --cwd /var/www/services/budget -- run preview -- --host 127.0.0.1 --port 5173
 pm2 save
 ```
 
 ### Wallet
 
 ```bash
+export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.schekochikhin-tools.ru
 pm2 delete wallet
-pm2 start npm --name wallet --cwd /var/www/services/wallet -- run preview -- --host 127.0.0.1 --port 5174 --allowed-hosts .schekochikhin-tools.ru
+pm2 start npm --name wallet --cwd /var/www/services/wallet -- run preview -- --host 127.0.0.1 --port 5174
 pm2 save
 ```
 
@@ -135,5 +140,5 @@ journalctl -u caddy -n 40 --no-pager
 ## Замечания
 
 - Снаружи сайт открывается по **домену** (`https://…`), не по `IP:5180` — приложения слушают только `127.0.0.1`, снаружи их отдаёт Caddy на 80/443.
-- Без `--allowed-hosts` (или `preview.allowedHosts` в vite) Vite покажет: `Blocked request. This host is not allowed`.
+- Не передавайте Vite CLI `--allowed-hosts` — опции нет, preview упадет. Нужны `preview.allowedHosts` в конфиге и/или `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS`.
 - После успешного `pm2 save` список процессов сохранится и поднимется после reboot (если настроен `pm2 startup`).

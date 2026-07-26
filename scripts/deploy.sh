@@ -44,7 +44,11 @@ fi
 
 echo "==> Restarting $APP_NAME (vite preview on :$PORT, allowedHosts=$ALLOWED_HOSTS)"
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT" --allowed-hosts "$ALLOWED_HOSTS"
+# Vite preview has no CLI --allowed-hosts; vite.config + env handle Host checks.
+if [[ "$ALLOWED_HOSTS" != "true" ]]; then
+  export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="$ALLOWED_HOSTS"
+fi
+pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT"
 pm2 save
 
 echo "==> Regenerating Caddyfile"

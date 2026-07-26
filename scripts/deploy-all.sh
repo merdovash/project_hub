@@ -52,7 +52,11 @@ fi
 start_portal() {
   echo "==> Restarting hub in PM2 ($APP_NAME :$PORT, allowedHosts=$ALLOWED_HOSTS)"
   pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-  pm2 start npm --name "$APP_NAME" --cwd "$ROOT" -- run preview -- --host 127.0.0.1 --port "$PORT" --allowed-hosts "$ALLOWED_HOSTS"
+  # Vite preview has no CLI --allowed-hosts; config + env handle Host checks.
+  if [[ "$ALLOWED_HOSTS" != "true" ]]; then
+    export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="$ALLOWED_HOSTS"
+  fi
+  pm2 start npm --name "$APP_NAME" --cwd "$ROOT" -- run preview -- --host 127.0.0.1 --port "$PORT"
 }
 
 if [[ "$SKIP_PORTAL" != "1" ]]; then

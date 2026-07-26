@@ -248,33 +248,40 @@ function writeServiceEnv(svc, sharedEnv) {
   fs.writeFileSync(path.join(svc.path, '.env'), `${lines.join('\n')}\n`, 'utf8')
 }
 
-function allowedHostsFlag(domain) {
+/** Vite has no CLI `--allowed-hosts` for preview; use env (picked up via server.allowedHosts). */
+function allowedHostsEnv(domain) {
   const host = String(domain || '')
     .trim()
     .replace(/^\./, '')
-  return host ? `.${host}` : true
+  return host ? `.${host}` : ''
 }
 
 function restartPm2(svc, domain) {
   const name = svc.pm2Name || svc.id
+  const allowed = allowedHostsEnv(domain)
   spawnSync('pm2', ['delete', name], { stdio: 'ignore', shell: true })
-  // Prefer start via npm script string from config
-  run('pm2', [
-    'start',
-    'npm',
-    '--name',
-    name,
-    '--',
-    'run',
-    'preview',
-    '--',
-    '--host',
-    '127.0.0.1',
-    '--port',
-    String(svc.port),
-    '--allowed-hosts',
-    String(allowedHostsFlag(domain)),
-  ], { cwd: svc.path })
+  const env = { ...process.env }
+  if (allowed) {
+    env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = allowed
+  }
+  run(
+    'pm2',
+    [
+      'start',
+      'npm',
+      '--name',
+      name,
+      '--',
+      'run',
+      'preview',
+      '--',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(svc.port),
+    ],
+    { cwd: svc.path, env },
+  )
   run('pm2', ['save'], {})
 }
 
