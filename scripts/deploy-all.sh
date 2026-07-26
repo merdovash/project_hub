@@ -50,9 +50,20 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Building hub"
   npm run build
 
-  echo "==> Restarting hub in PM2 ($APP_NAME :$PORT)"
+  ALLOWED_HOSTS="true"
+  if [[ -f .env ]]; then
+    DOMAIN_VAL="$(grep -E '^DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+    COOKIE_VAL="$(grep -E '^COOKIE_DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+    if [[ -n "${COOKIE_VAL:-}" ]]; then
+      ALLOWED_HOSTS="$COOKIE_VAL"
+    elif [[ -n "${DOMAIN_VAL:-}" ]]; then
+      ALLOWED_HOSTS=".${DOMAIN_VAL#.}"
+    fi
+  fi
+
+  echo "==> Restarting hub in PM2 ($APP_NAME :$PORT, allowedHosts=$ALLOWED_HOSTS)"
   pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-  pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT"
+  pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT" --allowed-hosts "$ALLOWED_HOSTS"
 else
   echo "==> Skipping hub (SKIP_PORTAL=1)"
 fi

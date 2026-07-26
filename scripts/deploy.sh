@@ -31,9 +31,20 @@ if ! command -v pm2 >/dev/null; then
   exit 1
 fi
 
-echo "==> Restarting $APP_NAME (vite preview on :$PORT)"
+ALLOWED_HOSTS="true"
+if [[ -f .env ]]; then
+  DOMAIN_VAL="$(grep -E '^DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  COOKIE_VAL="$(grep -E '^COOKIE_DOMAIN=' .env | head -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
+  if [[ -n "${COOKIE_VAL:-}" ]]; then
+    ALLOWED_HOSTS="$COOKIE_VAL"
+  elif [[ -n "${DOMAIN_VAL:-}" ]]; then
+    ALLOWED_HOSTS=".${DOMAIN_VAL#.}"
+  fi
+fi
+
+echo "==> Restarting $APP_NAME (vite preview on :$PORT, allowedHosts=$ALLOWED_HOSTS)"
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT"
+pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT" --allowed-hosts "$ALLOWED_HOSTS"
 pm2 save
 
 echo "==> Regenerating Caddyfile"

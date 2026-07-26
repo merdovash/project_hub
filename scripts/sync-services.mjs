@@ -248,7 +248,14 @@ function writeServiceEnv(svc, sharedEnv) {
   fs.writeFileSync(path.join(svc.path, '.env'), `${lines.join('\n')}\n`, 'utf8')
 }
 
-function restartPm2(svc) {
+function allowedHostsFlag(domain) {
+  const host = String(domain || '')
+    .trim()
+    .replace(/^\./, '')
+  return host ? `.${host}` : true
+}
+
+function restartPm2(svc, domain) {
   const name = svc.pm2Name || svc.id
   spawnSync('pm2', ['delete', name], { stdio: 'ignore', shell: true })
   // Prefer start via npm script string from config
@@ -265,16 +272,18 @@ function restartPm2(svc) {
     '127.0.0.1',
     '--port',
     String(svc.port),
+    '--allowed-hosts',
+    String(allowedHostsFlag(domain)),
   ], { cwd: svc.path })
   run('pm2', ['save'], {})
 }
 
-function syncService(svc, sharedEnv) {
+function syncService(svc, sharedEnv, domain) {
   console.log(`\n==> Sync ${svc.id} (${svc.subdomain})`)
   ensureRepo(svc)
   writeServiceEnv(svc, sharedEnv)
   runShell(svc.build || 'npm ci && npm run build', svc.path, buildEnv(sharedEnv))
-  restartPm2(svc)
+  restartPm2(svc, domain)
 }
 
 function maybeReloadCaddy(caddyPath) {
@@ -340,7 +349,7 @@ function main() {
     throw new Error(`Service not found or disabled: ${onlyId}`)
   }
   for (const svc of targets) {
-    syncService(svc, sharedEnv)
+    syncService(svc, sharedEnv, cfg.domain)
   }
   console.log('\nSync complete')
 }
