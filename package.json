@@ -15,7 +15,8 @@
     "db:setup": "node ./node_modules/vite-node/vite-node.mjs server/db/cli.ts setup",
     "sync": "node ./scripts/sync-services.mjs",
     "sync:caddy": "node ./scripts/sync-services.mjs --caddy-only",
-    "deploy": "bash ./scripts/deploy.sh"
+    "deploy": "bash ./scripts/deploy.sh",
+    "deploy:all": "bash ./scripts/deploy-all.sh"
   },
   "dependencies": {
     "react": "^19.1.0",

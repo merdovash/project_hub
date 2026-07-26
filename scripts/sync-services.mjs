@@ -15,7 +15,6 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parse as parseYaml } from 'yaml'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
@@ -58,18 +57,74 @@ function loadEnvFile() {
   }
 }
 
+/** Minimal YAML parser for services.yaml (top-level scalars + services list of maps). No deps. */
+function parseServicesYaml(text) {
+  const root = {}
+  let services = null
+  let current = null
+
+  const coerce = (raw) => {
+    if (raw === 'true') return true
+    if (raw === 'false') return false
+    if (raw === '' || raw === '~' || raw === 'null') return null
+    if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw)
+    if (
+      (raw.startsWith('"') && raw.endsWith('"')) ||
+      (raw.startsWith("'") && raw.endsWith("'"))
+    ) {
+      return raw.slice(1, -1)
+    }
+    return raw
+  }
+
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith('#')) continue
+
+    const listItem = line.match(/^(\s*)-\s+([A-Za-z_][\w]*)\s*:\s*(.*)$/)
+    if (listItem) {
+      if (!services) throw new Error('Unexpected list item before services:')
+      current = { [listItem[2]]: coerce(listItem[3].trim()) }
+      services.push(current)
+      continue
+    }
+
+    const nested = line.match(/^\s{2,}([A-Za-z_][\w]*)\s*:\s*(.*)$/)
+    if (nested && current) {
+      current[nested[1]] = coerce(nested[2].trim())
+      continue
+    }
+
+    const top = line.match(/^([A-Za-z_][\w]*)\s*:\s*(.*)$/)
+    if (!top) continue
+    const key = top[1]
+    const rest = top[2].trim()
+    if (key === 'services' && rest === '') {
+      services = []
+      root.services = services
+      current = null
+      continue
+    }
+    root[key] = coerce(rest)
+  }
+
+  return root
+}
+
 function loadConfig() {
   loadEnvFile()
   const configPath = process.env.SERVICES_CONFIG?.trim()
     ? path.resolve(process.env.SERVICES_CONFIG.trim())
     : path.join(ROOT, 'config', 'services.yaml')
-  const parsed = parseYaml(fs.readFileSync(configPath, 'utf8'))
+  const parsed = parseServicesYaml(fs.readFileSync(configPath, 'utf8'))
+  if (!parsed.domain || !Array.isArray(parsed.services)) {
+    throw new Error(`Invalid services config: ${configPath}`)
+  }
   return {
     domain: parsed.domain,
     cookieDomain: parsed.cookieDomain ?? `.${parsed.domain}`,
     portalPort: Number(parsed.portalPort ?? 5180),
     portalHost: process.env.PORTAL_UPSTREAM_HOST ?? '127.0.0.1',
-    services: (parsed.services ?? []).map((svc) => ({
+    services: parsed.services.map((svc) => ({
       ...svc,
       enabled: svc.enabled !== false,
     })),
@@ -147,6 +202,13 @@ function runShell(command, cwd, env) {
   }
 }
 
+/** Env for install/build: keep shared vars, but unset NODE_ENV so npm ci installs devDependencies. */
+function buildEnv(sharedEnv) {
+  const { NODE_ENV: _ignored, ...rest } = sharedEnv
+  // Explicit empty overrides process.env.NODE_ENV after merge in runShell
+  return { ...rest, NODE_ENV: '' }
+}
+
 function ensureRepo(svc) {
   if (!fs.existsSync(svc.path)) {
     fs.mkdirSync(path.dirname(svc.path), { recursive: true })
@@ -191,7 +253,7 @@ function syncService(svc, sharedEnv) {
   console.log(`\n==> Sync ${svc.id} (${svc.subdomain})`)
   ensureRepo(svc)
   writeServiceEnv(svc, sharedEnv)
-  runShell(svc.build || 'npm ci && npm run build', svc.path, sharedEnv)
+  runShell(svc.build || 'npm ci && npm run build', svc.path, buildEnv(sharedEnv))
   restartPm2(svc)
 }
 

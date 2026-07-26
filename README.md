@@ -39,7 +39,19 @@ npm run sync -- --only wallet
 
 DNS: см. [`deploy/DNS.md`](deploy/DNS.md) — нужен wildcard `*.example.com`.
 
-## Деплой
+## Деплой (Ubuntu / VPS)
 
-`scripts/deploy.sh` + GitHub Actions `.github/workflows/deploy.yml`.
+Полный прогон хаба + всех сервисов в PM2:
+
+```bash
+chmod +x scripts/deploy-all.sh
+./scripts/deploy-all.sh
+# или: npm run deploy:all
+```
+
+Только дочерние сервисы (хаб не трогать): `SKIP_PORTAL=1 ./scripts/deploy-all.sh`.
+
+Скрипт: git pull/build хаба → PM2 → sync всех enabled из `services.yaml` → `pm2 save` → systemd autostart PM2.
+
+Только хаб: `scripts/deploy.sh`. CI: `.github/workflows/deploy.yml`.
 Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH`, optional `DEPLOY_PORT`.
