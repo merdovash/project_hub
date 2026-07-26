@@ -39,6 +39,51 @@ function resolveConfigPath(): string {
   return path.resolve(process.cwd(), 'config', 'services.yaml')
 }
 
+function hostnameFromUrl(raw: string | undefined): string | undefined {
+  if (!raw?.trim()) return undefined
+  try {
+    return new URL(raw.trim()).hostname || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** DOMAIN → host of PORTAL_URL → COOKIE_DOMAIN → services.yaml */
+export function resolveDomain(yamlDomain?: string): string {
+  const fromEnv = process.env.DOMAIN?.trim()
+  if (fromEnv) return fromEnv
+
+  const fromPortal = hostnameFromUrl(process.env.PORTAL_URL)
+  if (fromPortal) return fromPortal
+
+  const cookie = process.env.COOKIE_DOMAIN?.trim()
+  if (cookie) return cookie.replace(/^\./, '')
+
+  if (yamlDomain?.trim()) return yamlDomain.trim()
+  throw new Error('Set DOMAIN (or PORTAL_URL / COOKIE_DOMAIN) in .env, or domain in services.yaml')
+}
+
+export function resolveCookieDomain(domain: string, yamlCookie?: string): string {
+  return process.env.COOKIE_DOMAIN?.trim() || yamlCookie?.trim() || `.${domain}`
+}
+
+export function resolvePublicProtocol(): string {
+  const fromPortal = process.env.PORTAL_URL?.trim()
+  if (fromPortal) {
+    try {
+      const proto = new URL(fromPortal).protocol.replace(':', '')
+      if (proto === 'http' || proto === 'https') return proto
+    } catch {
+      /* fall through */
+    }
+  }
+  const explicit = process.env.PUBLIC_PROTOCOL?.trim()
+  if (explicit === 'http' || explicit === 'https') return explicit
+  if (process.env.NODE_ENV === 'production') return 'https'
+  if (process.env.DOMAIN?.trim() || process.env.COOKIE_DOMAIN?.trim()) return 'https'
+  return 'http'
+}
+
 export function loadServicesConfig(): PortalServicesConfig {
   loadEnvFile()
   const configPath = resolveConfigPath()
@@ -47,9 +92,12 @@ export function loadServicesConfig(): PortalServicesConfig {
   }
   const raw = fs.readFileSync(configPath, 'utf8')
   const parsed = parseYaml(raw) as Partial<PortalServicesConfig>
-  if (!parsed.domain || !Array.isArray(parsed.services)) {
-    throw new Error('Invalid services.yaml: domain and services[] required')
+  if (!Array.isArray(parsed.services)) {
+    throw new Error('Invalid services.yaml: services[] required')
   }
+
+  const domain = resolveDomain(parsed.domain)
+  const cookieDomain = resolveCookieDomain(domain, parsed.cookieDomain)
 
   const services: ServiceConfig[] = parsed.services.map((svc) => ({
     id: String(svc.id),
@@ -67,15 +115,15 @@ export function loadServicesConfig(): PortalServicesConfig {
   }))
 
   return {
-    domain: String(parsed.domain),
-    cookieDomain: String(parsed.cookieDomain ?? `.${parsed.domain}`),
+    domain,
+    cookieDomain,
     portalPort: Number(parsed.portalPort ?? 5180),
     services,
   }
 }
 
 export function listPublicServices(cfg: PortalServicesConfig = loadServicesConfig()): PublicService[] {
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http'
+  const protocol = resolvePublicProtocol()
   return cfg.services
     .filter((s) => s.enabled)
     .map((s) => ({

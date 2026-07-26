@@ -116,12 +116,32 @@ function loadConfig() {
     ? path.resolve(process.env.SERVICES_CONFIG.trim())
     : path.join(ROOT, 'config', 'services.yaml')
   const parsed = parseServicesYaml(fs.readFileSync(configPath, 'utf8'))
-  if (!parsed.domain || !Array.isArray(parsed.services)) {
+  if (!Array.isArray(parsed.services)) {
     throw new Error(`Invalid services config: ${configPath}`)
   }
+
+  const domain =
+    process.env.DOMAIN?.trim() ||
+    (() => {
+      try {
+        return process.env.PORTAL_URL?.trim() ? new URL(process.env.PORTAL_URL.trim()).hostname : ''
+      } catch {
+        return ''
+      }
+    })() ||
+    process.env.COOKIE_DOMAIN?.trim()?.replace(/^\./, '') ||
+    parsed.domain
+
+  if (!domain) {
+    throw new Error('Set DOMAIN (or PORTAL_URL / COOKIE_DOMAIN) in .env, or domain in services.yaml')
+  }
+
+  const cookieDomain =
+    process.env.COOKIE_DOMAIN?.trim() || parsed.cookieDomain || `.${domain}`
+
   return {
-    domain: parsed.domain,
-    cookieDomain: parsed.cookieDomain ?? `.${parsed.domain}`,
+    domain,
+    cookieDomain,
     portalPort: Number(parsed.portalPort ?? 5180),
     portalHost: process.env.PORTAL_UPSTREAM_HOST ?? '127.0.0.1',
     services: parsed.services.map((svc) => ({
