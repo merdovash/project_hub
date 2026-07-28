@@ -61,20 +61,33 @@ start_portal() {
 
 if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Updating hub ($BRANCH)"
+  HUB_BEFORE="$(git rev-parse HEAD 2>/dev/null || true)"
   git fetch origin "$BRANCH"
   git checkout "$BRANCH"
   git reset --hard "origin/$BRANCH"
+  HUB_AFTER="$(git rev-parse HEAD)"
+  HUB_SHA_SHORT="${HUB_AFTER:0:7}"
 
-  echo "==> Installing hub dependencies"
-  npm ci
+  HUB_CHANGED=1
+  if [[ -n "$HUB_BEFORE" && "$HUB_BEFORE" == "$HUB_AFTER" && -d node_modules ]]; then
+    HUB_CHANGED=0
+  fi
 
-  echo "==> Migrating hub DB"
-  npm run db:migrate
+  if [[ "$HUB_CHANGED" == "1" ]]; then
+    echo "==> Hub updated ($HUB_SHA_SHORT) — install/migrate/build"
+    echo "==> Installing hub dependencies"
+    npm ci
 
-  echo "==> Building hub"
-  npm run build
+    echo "==> Migrating hub DB"
+    npm run db:migrate
 
-  start_portal
+    echo "==> Building hub"
+    npm run build
+
+    start_portal
+  else
+    echo "==> Hub unchanged ($HUB_SHA_SHORT) — skip install/migrate/build"
+  fi
 else
   echo "==> Skipping hub (SKIP_PORTAL=1)"
 fi
