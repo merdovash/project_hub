@@ -49,6 +49,13 @@ if [[ -f .env ]]; then
   fi
 fi
 
+hub_is_healthy() {
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 1 "http://127.0.0.1:${PORT}/" || true)"
+  [[ "$code" =~ ^[0-9]+$ && "$code" != "000" ]] || return 1
+  pm2 describe "$APP_NAME" 2>/dev/null | grep -q "status.*online"
+}
+
 start_portal() {
   echo "==> Restarting hub in PM2 ($APP_NAME :$PORT, allowedHosts=$ALLOWED_HOSTS)"
   pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
@@ -87,6 +94,12 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
     start_portal
   else
     echo "==> Hub unchanged ($HUB_SHA_SHORT) — skip install/migrate/build"
+    if hub_is_healthy; then
+      echo "==> Hub healthy — skip restart"
+    else
+      echo "==> Hub unchanged but not healthy — restart"
+      start_portal
+    fi
   fi
 else
   echo "==> Skipping hub (SKIP_PORTAL=1)"
@@ -95,10 +108,14 @@ fi
 echo "==> Syncing all enabled services (install/migrate/build/PM2) + Caddyfile"
 node ./scripts/sync-services.mjs
 
-# Child builds can OOM-kill the hub preview; ensure portal is up at the end.
+# Child builds can OOM-kill the hub preview; restart only if it went down.
 if [[ "$SKIP_PORTAL" != "1" ]]; then
-  echo "==> Ensuring hub is online after sync"
-  start_portal
+  if hub_is_healthy; then
+    echo "==> Hub still online after sync — skip restart"
+  else
+    echo "==> Hub not healthy after sync — restarting"
+    start_portal
+  fi
 fi
 
 echo "==> Waiting for hub :$PORT"
