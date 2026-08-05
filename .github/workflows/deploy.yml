@@ -1,33 +1,50 @@
-name: Deploy portal to VPS
+name: Redeploy project_hub
+
+# Полный редеплой хаба (project_hub) на VPS.
+# Рабочая директория на сервере: secrets.DEPLOY_PATH (например ~/hub/project_hub).
+#
+# Режимы (workflow_dispatch → mode):
+#   all          — scripts/deploy-all.sh: хаб + все enabled-сервисы + Caddy + pm2 save
+#   hub          — scripts/deploy.sh: только хаб + Caddyfile
+#   hub-and-sync — scripts/deploy.sh с SYNC_SERVICES=1: хаб + sync всех подсервисов
+#
+# Secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH, optional DEPLOY_PORT
 
 on:
   push:
     branches: [master]
   workflow_dispatch:
     inputs:
-      sync_services:
-        description: 'Also sync all subservices (git pull/build/pm2)'
-        required: false
-        default: 'false'
-        type: boolean
+      mode:
+        description: 'Режим редеплоя project_hub'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - hub
+          - hub-and-sync
 
 concurrency:
-  group: deploy-portal-vps
+  group: deploy-project-hub-vps
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
+      - name: Redeploy over SSH
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.mode || 'all' }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script_stop: true
-          command_timeout: 30m
+          command_timeout: 45m
+          envs: DEPLOY_MODE
           script: |
             set -euo pipefail
             export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -37,5 +54,21 @@ jobs:
             cd "${{ secrets.DEPLOY_PATH }}"
             git fetch origin master
             git reset --hard origin/master
-            chmod +x scripts/deploy.sh
-            SYNC_SERVICES="${{ github.event.inputs.sync_services == 'true' && '1' || '0' }}" ./scripts/deploy.sh
+            chmod +x scripts/deploy.sh scripts/deploy-all.sh
+
+            echo "==> Redeploy mode: ${DEPLOY_MODE}"
+            case "${DEPLOY_MODE}" in
+              all)
+                ./scripts/deploy-all.sh
+                ;;
+              hub-and-sync)
+                SYNC_SERVICES=1 ./scripts/deploy.sh
+                ;;
+              hub)
+                ./scripts/deploy.sh
+                ;;
+              *)
+                echo "Unknown DEPLOY_MODE=${DEPLOY_MODE}" >&2
+                exit 1
+                ;;
+            esac

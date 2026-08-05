@@ -63,5 +63,18 @@ chmod +x scripts/deploy-all.sh
 
 Скрипт: git pull → `npm ci` → `db:migrate` → build хаба → PM2 → sync сервисов (migrate+build+PM2) → проверка порта → `pm2 save`.
 
-Только хаб: `scripts/deploy.sh`. CI: `.github/workflows/deploy.yml`.
+Только хаб: `scripts/deploy.sh`. CI: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — **Redeploy project_hub**.
+
+### GitHub Action (CI)
+
+Workflow `Redeploy project_hub` (`.github/workflows/deploy.yml`):
+
+| Триггер | Поведение |
+|---------|-----------|
+| `push` в `master` | полный редеплой (`deploy-all.sh`: хаб + все enabled-сервисы) |
+| `workflow_dispatch` → `mode=all` | то же |
+| `workflow_dispatch` → `mode=hub` | только хаб + Caddy (`deploy.sh`) |
+| `workflow_dispatch` → `mode=hub-and-sync` | хаб + `SYNC_SERVICES=1` |
+
 Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH`, optional `DEPLOY_PORT`.
+На VPS `DEPLOY_PATH` указывает на checkout хаба (например `~/hub/project_hub`).

@@ -6,7 +6,26 @@
 
 Команды вставляйте **по одной** — не копируйте целый блок целиком.
 
-## Рекомендуемый способ (полный деплой)
+## GitHub Action: Redeploy project_hub
+
+В репозитории [project_hub](https://github.com/merdovash/project_hub) workflow
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
+
+1. SSH на VPS (`DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_SSH_KEY`).
+2. `cd $DEPLOY_PATH` → `git fetch` + `reset --hard origin/master`.
+3. Запуск скрипта в зависимости от `mode`:
+
+| Mode | Скрипт | Что делает |
+|------|--------|------------|
+| `all` (по умолчанию, в т.ч. на push в `master`) | `./scripts/deploy-all.sh` | хаб (ci/migrate/build/PM2) + sync всех enabled-сервисов + Caddy + `pm2 save` |
+| `hub` | `./scripts/deploy.sh` | только хаб + Caddyfile |
+| `hub-and-sync` | `SYNC_SERVICES=1 ./scripts/deploy.sh` | хаб + sync подсервисов |
+
+Ручной запуск: GitHub → Actions → **Redeploy project_hub** → Run workflow → выбрать `mode`.
+
+Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (путь к `project_hub` на сервере), optional `DEPLOY_PORT`.
+
+## Рекомендуемый способ (полный деплой вручную)
 
 Подтягивает хаб, гоняет миграции БД, собирает, перезапускает PM2, синхронизирует enabled-сервисы (включая `db:migrate`) и Caddyfile:
 
