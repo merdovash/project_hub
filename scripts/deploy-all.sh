@@ -66,6 +66,8 @@ start_portal() {
   pm2 start npm --name "$APP_NAME" --cwd "$ROOT" -- run preview -- --host 127.0.0.1 --port "$PORT"
 }
 
+HUB_NEEDS_WAIT=0
+
 if [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Updating hub ($BRANCH)"
   HUB_BEFORE="$(git rev-parse HEAD 2>/dev/null || true)"
@@ -92,6 +94,7 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
     npm run build
 
     start_portal
+    HUB_NEEDS_WAIT=1
   else
     echo "==> Hub unchanged ($HUB_SHA_SHORT) — skip install/migrate/build"
     if hub_is_healthy; then
@@ -99,6 +102,7 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
     else
       echo "==> Hub unchanged but not healthy — restart"
       start_portal
+      HUB_NEEDS_WAIT=1
     fi
   fi
 else
@@ -115,21 +119,26 @@ if [[ "$SKIP_PORTAL" != "1" ]]; then
   else
     echo "==> Hub not healthy after sync — restarting"
     start_portal
+    HUB_NEEDS_WAIT=1
   fi
 fi
 
-echo "==> Waiting for hub :$PORT"
-for i in $(seq 1 45); do
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 1 "http://127.0.0.1:${PORT}/" || true)"
-  if [[ "$code" =~ ^[0-9]+$ && "$code" != "000" ]]; then
-    echo "Hub ready (HTTP $code)"
-    break
-  fi
-  if [[ "$i" -eq 45 ]]; then
-    echo "WARNING: hub did not respond on :$PORT — check: pm2 logs $APP_NAME"
-  fi
-  sleep 1
-done
+if [[ "$SKIP_PORTAL" != "1" && "$HUB_NEEDS_WAIT" == "1" ]]; then
+  echo "==> Waiting for hub :$PORT"
+  for i in $(seq 1 45); do
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 1 "http://127.0.0.1:${PORT}/" || true)"
+    if [[ "$code" =~ ^[0-9]+$ && "$code" != "000" ]]; then
+      echo "Hub ready (HTTP $code)"
+      break
+    fi
+    if [[ "$i" -eq 45 ]]; then
+      echo "WARNING: hub did not respond on :$PORT — check: pm2 logs $APP_NAME"
+    fi
+    sleep 1
+  done
+elif [[ "$SKIP_PORTAL" != "1" ]]; then
+  echo "==> Hub already healthy — skip wait"
+fi
 
 pm2 save
 

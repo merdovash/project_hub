@@ -244,6 +244,20 @@ function gitRev(cwd) {
   return result.status === 0 ? String(result.stdout || '').trim() : ''
 }
 
+function gitRemoteRev(cwd, branch) {
+  const result = spawnSync('git', ['ls-remote', 'origin', `refs/heads/${branch}`], {
+    cwd,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  })
+  if (result.status !== 0) return ''
+  const line = String(result.stdout || '')
+    .split(/\r?\n/)
+    .find((l) => l.trim())
+  if (!line) return ''
+  return line.split(/[\s\t]/)[0] || ''
+}
+
 function ensureRepo(svc) {
   const branch = svc.branch || 'master'
   const gitDir = path.join(svc.path, '.git')
@@ -254,6 +268,11 @@ function ensureRepo(svc) {
   }
 
   const before = gitRev(svc.path)
+  const remote = gitRemoteRev(svc.path, branch)
+  if (before && remote && before === remote) {
+    return { cloned: false, changed: false, sha: before }
+  }
+
   run('git', ['fetch', 'origin', branch], { cwd: svc.path })
   run('git', ['checkout', branch], { cwd: svc.path })
   run('git', ['reset', '--hard', `origin/${branch}`], { cwd: svc.path })
@@ -273,18 +292,30 @@ function writeServiceEnv(svc, sharedEnv) {
   return prev !== content
 }
 
-function pm2IsOnline(name) {
+/** Cached pm2 jlist for one sync run; invalidate after restartPm2. */
+let pm2ListCache = null
+
+function loadPm2List({ force = false } = {}) {
+  if (!force && pm2ListCache) return pm2ListCache
   const result = spawnSync('pm2', ['jlist'], {
     encoding: 'utf8',
     shell: true,
   })
-  if (result.status !== 0) return false
-  try {
-    const list = JSON.parse(String(result.stdout || '[]'))
-    return list.some((p) => p.name === name && p.pm2_env?.status === 'online')
-  } catch {
-    return false
+  if (result.status !== 0) {
+    pm2ListCache = []
+    return pm2ListCache
   }
+  try {
+    pm2ListCache = JSON.parse(String(result.stdout || '[]'))
+  } catch {
+    pm2ListCache = []
+  }
+  return pm2ListCache
+}
+
+function pm2IsOnline(name) {
+  const list = loadPm2List()
+  return list.some((p) => p.name === name && p.pm2_env?.status === 'online')
 }
 
 function localPortResponds(port) {
@@ -384,7 +415,7 @@ function restartPm2(svc, domain) {
     ],
     { cwd: svc.path, env },
   )
-  run('pm2', ['save'], {})
+  pm2ListCache = null
   waitForLocalPort(svc.port, name)
 }
 
@@ -451,9 +482,38 @@ function maybeReloadCaddy(caddyPath) {
   }
 }
 
-/** Prefer system unit config; fall back to reload with generated path. */
-function installCaddyfile(caddyPath) {
+function readFileOrNull(filePath) {
+  try {
+    return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : null
+  } catch {
+    return null
+  }
+}
+
+/** Prefer system unit config; fall back to reload with generated path. Skip if unchanged. */
+function installCaddyfile(caddyPath, content) {
   const dest = process.env.CADDYFILE_DEST || '/etc/caddy/Caddyfile'
+  const destExists = fs.existsSync(dest)
+  const installedSame = destExists && readFileOrNull(dest) === content
+  const generatedPrev = readFileOrNull(caddyPath)
+  const generatedSame = generatedPrev === content
+
+  if (installedSame && generatedSame) {
+    console.log(`Caddyfile unchanged — skip install/reload`)
+    return
+  }
+
+  // Always refresh generated artifact when content differs
+  if (!generatedSame) {
+    fs.writeFileSync(caddyPath, content, 'utf8')
+    console.log(`Wrote ${caddyPath}`)
+  }
+
+  if (installedSame) {
+    console.log(`System Caddyfile already matches — skip reload`)
+    return
+  }
+
   if (fs.existsSync(path.dirname(dest))) {
     try {
       fs.copyFileSync(caddyPath, dest)
@@ -480,8 +540,7 @@ function main() {
   const outDir = path.join(ROOT, 'deploy')
   fs.mkdirSync(outDir, { recursive: true })
   const caddyPath = path.join(outDir, 'Caddyfile.generated')
-  fs.writeFileSync(caddyPath, renderCaddyfile(cfg), 'utf8')
-  console.log(`Wrote ${caddyPath}`)
+  const caddyContent = renderCaddyfile(cfg)
 
   // Also emit a DNS/wildcard checklist
   const dnsPath = path.join(outDir, 'DNS.md')
@@ -504,13 +563,14 @@ function main() {
     'utf8',
   )
 
-  installCaddyfile(caddyPath)
+  installCaddyfile(caddyPath, caddyContent)
 
   if (caddyOnly) {
     console.log('Caddy-only sync done')
     return
   }
 
+  pm2ListCache = null
   const targets = cfg.services.filter((s) => s.enabled && (!onlyId || s.id === onlyId))
   if (onlyId && targets.length === 0) {
     throw new Error(`Service not found or disabled: ${onlyId}`)
@@ -518,6 +578,7 @@ function main() {
   for (const svc of targets) {
     syncService(svc, sharedEnv, cfg.domain, { force })
   }
+  run('pm2', ['save'], {})
   console.log(force ? '\nSync complete (--force)' : '\nSync complete')
 }
 
