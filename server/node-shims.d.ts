@@ -42,6 +42,45 @@ declare module 'node:crypto' {
 
 declare module 'node:os' {
   export function tmpdir(): string
+  export function loadavg(): [number, number, number]
+  export function totalmem(): number
+  export function freemem(): number
+  export function cpus(): { model: string }[]
+  export function uptime(): number
+  export function hostname(): string
+}
+
+declare module 'node:child_process' {
+  export interface SpawnSyncResult {
+    status: number | null
+    stdout: string
+    stderr: string
+    error?: Error
+  }
+  export interface SpawnSyncOptions {
+    cwd?: string
+    env?: Record<string, string | undefined>
+    encoding?: 'utf8' | 'utf-8'
+    timeout?: number
+    shell?: boolean
+    maxBuffer?: number
+  }
+  export function spawnSync(
+    command: string,
+    args?: string[],
+    options?: SpawnSyncOptions,
+  ): SpawnSyncResult
+  export interface ChildProcess {
+    pid?: number
+    unref(): void
+  }
+  export interface SpawnOptions {
+    cwd?: string
+    env?: Record<string, string | undefined>
+    detached?: boolean
+    stdio?: 'ignore' | 'inherit'
+  }
+  export function spawn(command: string, args: string[], options?: SpawnOptions): ChildProcess
 }
 
 declare module 'node:http' {
@@ -148,4 +187,29 @@ interface ImportMeta {
 declare const console: {
   log(...args: unknown[]): void
   error(...args: unknown[]): void
+}
+
+interface FetchResponse {
+  ok: boolean
+  status: number
+  json(): Promise<unknown>
+  text(): Promise<string>
+}
+
+declare function fetch(
+  url: string,
+  init?: {
+    method?: string
+    headers?: Record<string, string>
+    body?: string
+    signal?: unknown
+  },
+): Promise<FetchResponse>
+
+declare function setTimeout(callback: (...args: unknown[]) => void, ms?: number): number
+declare function clearTimeout(id: number): void
+
+declare class AbortController {
+  signal: unknown
+  abort(): void
 }

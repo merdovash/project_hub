@@ -54,6 +54,14 @@ fi
 pm2 start npm --name "$APP_NAME" -- run preview -- --host 127.0.0.1 --port "$PORT"
 pm2 save
 
+BOT_APP_NAME="${PM2_BOT_NAME:-portal-bot}"
+if [[ -f .env ]] && grep -Eq '^TELEGRAM_BOT_TOKEN=.+' .env; then
+  echo "==> Restarting telegram bot ($BOT_APP_NAME)"
+  pm2 delete "$BOT_APP_NAME" >/dev/null 2>&1 || true
+  pm2 start npm --name "$BOT_APP_NAME" -- run bot
+  pm2 save
+fi
+
 echo "==> Regenerating Caddyfile"
 node ./scripts/sync-services.mjs --caddy-only
 

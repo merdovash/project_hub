@@ -34,6 +34,11 @@ const HUB_ONLY_ENV = new Set([
   'PORTAL_UPSTREAM_HOST',
   'CADDY_RELOAD',
   'CADDYFILE',
+  'TELEGRAM_BOT_TOKEN',
+  'BOT_PASSWORD_HASH',
+  'TELEGRAM_ALLOWED_USER_IDS',
+  'BOT_SESSION_TTL_HOURS',
+  'BOT_DATA_DIR',
 ])
 
 function parseEnvFile(filePath) {
