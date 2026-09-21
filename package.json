@@ -13,6 +13,8 @@
     "db:migrate": "node ./node_modules/vite-node/vite-node.mjs server/db/cli.ts migrate",
     "db:seed": "node ./node_modules/vite-node/vite-node.mjs server/db/cli.ts seed",
     "db:setup": "node ./node_modules/vite-node/vite-node.mjs server/db/cli.ts setup",
+    "bot": "node ./node_modules/vite-node/vite-node.mjs server/bot/index.ts",
+    "bot:password": "node ./node_modules/vite-node/vite-node.mjs server/bot/index.ts hash-password",
     "sync": "node ./scripts/sync-services.mjs",
     "sync:caddy": "node ./scripts/sync-services.mjs --caddy-only",
     "deploy": "bash ./scripts/deploy.sh",

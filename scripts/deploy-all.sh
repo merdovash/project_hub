@@ -140,6 +140,20 @@ elif [[ "$SKIP_PORTAL" != "1" ]]; then
   echo "==> Hub already healthy — skip wait"
 fi
 
+BOT_APP_NAME="${PM2_BOT_NAME:-portal-bot}"
+if [[ -f .env ]] && grep -Eq '^TELEGRAM_BOT_TOKEN=.+' .env; then
+  BOT_NEEDS_RESTART=1
+  if [[ "${HUB_CHANGED:-1}" == "0" ]] && pm2 describe "$BOT_APP_NAME" 2>/dev/null | grep -q "status.*online"; then
+    BOT_NEEDS_RESTART=0
+    echo "==> Telegram bot online and hub unchanged — skip bot restart"
+  fi
+  if [[ "$BOT_NEEDS_RESTART" == "1" ]]; then
+    echo "==> Restarting telegram bot ($BOT_APP_NAME)"
+    pm2 delete "$BOT_APP_NAME" >/dev/null 2>&1 || true
+    pm2 start npm --name "$BOT_APP_NAME" --cwd "$ROOT" -- run bot
+  fi
+fi
+
 pm2 save
 
 if [[ "$SKIP_STARTUP" != "1" ]] && command -v systemctl >/dev/null; then

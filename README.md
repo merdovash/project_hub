@@ -47,6 +47,18 @@ npm run sync -- --force              # пересобрать/перезапус
 
 DNS: см. [`deploy/DNS.md`](deploy/DNS.md) — нужен wildcard `*.example.com`.
 
+## Telegram-бот управления
+
+Бот (`server/bot/`, PM2-процесс `portal-bot`) умеет: `/restart` (перезапуск хаба),
+`/redeploy` (полный deploy-all), `/status` (загрузка сервера и PM2), `/db` (размер БД),
+`/logs`. Вход по паролю (`/auth`, сессия 24 ч), allowlist по Telegram ID, лимит попыток,
+аудит-лог. Настройка и регистрация: [`deploy/BOT.md`](deploy/BOT.md).
+
+```bash
+npm run bot:password -- 'пароль'   # хеш для .env (BOT_PASSWORD_HASH)
+npm run bot                        # запуск вручную (обычно поднимает deploy-скрипт)
+```
+
 ## Деплой (Ubuntu / VPS)
 
 После `git pull` на сервере: [`deploy/RESTART.md`](deploy/RESTART.md).
